@@ -335,7 +335,8 @@ defmodule NxPenalties.Integration.PolarisTest do
 
     test "adds noise to gradients" do
       base_optimizer = sgd_optimizer(1.0)
-      optimizer = PolarisIntegration.add_gradient_noise(base_optimizer, 0.1)
+      # Use fixed seed for deterministic test
+      optimizer = PolarisIntegration.add_gradient_noise(base_optimizer, 0.1, seed: 42)
 
       {init_fn, update_fn} = optimizer
 
@@ -346,14 +347,21 @@ defmodule NxPenalties.Integration.PolarisTest do
       {updates1, state1} = update_fn.(gradients, state, params)
       {updates2, _state2} = update_fn.(gradients, state1, params)
 
-      # Updates should be slightly different due to noise
-      # (with very high probability given random noise)
+      # Pure SGD would give exactly -1.0; noise modifies this
+      # Verify noise is being added (updates differ from pure SGD)
+      pure_sgd_update = Nx.tensor([-1.0])
+      refute Nx.to_number(Nx.all_close(updates1.w, pure_sgd_update, atol: 1.0e-6)) == 1
+      refute Nx.to_number(Nx.all_close(updates2.w, pure_sgd_update, atol: 1.0e-6)) == 1
+
+      # Verify updates differ from each other (noise varies per step)
+      refute Nx.to_number(Nx.all_close(updates1.w, updates2.w, atol: 1.0e-6)) == 1
+
+      # Verify updates are in reasonable range (within 3 std devs of expected)
+      # With variance=0.1, std_dev ~= 0.316, so 3*std ~= 0.95
       [update1_val] = Nx.to_flat_list(updates1.w)
       [update2_val] = Nx.to_flat_list(updates2.w)
-
-      # Both should be close to -1.0 (the SGD update)
-      assert abs(update1_val + 1.0) < 0.5
-      assert abs(update2_val + 1.0) < 0.5
+      assert abs(update1_val + 1.0) < 1.0
+      assert abs(update2_val + 1.0) < 1.0
     end
 
     test "noise variance decays over steps" do

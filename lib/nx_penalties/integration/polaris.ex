@@ -247,6 +247,7 @@ defmodule NxPenalties.Integration.Polaris do
     * `variance` - Base noise variance. Default: `0.01`
     * `opts` - Options:
       * `:decay` - Variance decay rate per step. Default: `0.55`
+      * `:seed` - Random seed for reproducible noise. Default: random
 
   ## Noise Schedule
 
@@ -264,17 +265,21 @@ defmodule NxPenalties.Integration.Polaris do
   @spec add_gradient_noise(term(), float(), keyword()) :: term()
   def add_gradient_noise(optimizer, variance \\ 0.01, opts \\ []) do
     decay = Keyword.get(opts, :decay, 0.55)
+    seed = Keyword.get(opts, :seed)
     {base_init, base_update} = normalize_to_transform(optimizer)
 
     init_fn = fn params ->
       base_state = base_init.(params)
+
+      key =
+        if seed, do: Nx.Random.key(seed), else: Nx.Random.key(System.unique_integer([:positive]))
 
       %{
         base: base_state,
         variance: variance,
         decay: decay,
         step: 0,
-        key: Nx.Random.key(System.unique_integer([:positive]))
+        key: key
       }
     end
 
