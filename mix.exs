@@ -3,6 +3,7 @@ defmodule NxPenalties.MixProject do
 
   @version "0.1.0"
   @source_url "https://github.com/North-Shore-AI/nx_penalties"
+  @description "Composable regularization penalties and loss functions for the Nx ecosystem"
 
   def project do
     [
@@ -11,24 +12,29 @@ defmodule NxPenalties.MixProject do
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      package: package(),
+      description: @description,
 
       # Docs
       name: "NxPenalties",
       source_url: @source_url,
+      homepage_url: @source_url,
       docs: docs(),
 
       # Test
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [
         coveralls: :test,
-        "coveralls.html": :test
+        "coveralls.html": :test,
+        "coveralls.json": :test
       ],
       elixirc_paths: elixirc_paths(Mix.env()),
 
       # Dialyzer
       dialyzer: [
         plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
-        plt_add_apps: [:ex_unit]
+        plt_add_apps: [:ex_unit],
+        flags: [:unmatched_returns, :error_handling, :no_opaque]
       ],
 
       # Aliases
@@ -45,8 +51,8 @@ defmodule NxPenalties.MixProject do
 
   defp deps do
     [
-      # Core - use local Nx source
-      {:nx, path: "nx/nx", override: true},
+      # Core
+      {:nx, "~> 0.9"},
       {:nimble_options, "~> 1.0"},
       {:telemetry, "~> 1.0"},
 
@@ -54,8 +60,8 @@ defmodule NxPenalties.MixProject do
       {:axon, "~> 0.6", optional: true},
       {:polaris, "~> 0.1", optional: true},
 
-      # Test - use local EXLA source
-      {:exla, path: "nx/exla", only: :test},
+      # Test
+      {:exla, "~> 0.9", only: :test},
       {:stream_data, "~> 1.0", only: [:test, :dev]},
       {:excoveralls, "~> 0.18", only: :test},
 
@@ -66,17 +72,63 @@ defmodule NxPenalties.MixProject do
     ]
   end
 
+  defp package do
+    [
+      name: "nx_penalties",
+      maintainers: ["North-Shore-AI"],
+      licenses: ["MIT"],
+      links: %{
+        "GitHub" => @source_url,
+        "Changelog" => "#{@source_url}/blob/main/CHANGELOG.md"
+      },
+      files: ~w(lib assets .formatter.exs mix.exs README.md LICENSE CHANGELOG.md)
+    ]
+  end
+
   defp docs do
     [
       main: "readme",
-      extras: ["README.md", "CHANGELOG.md"],
-      source_ref: "v#{@version}"
+      logo: "assets/nx_penalties.svg",
+      extras: [
+        "README.md",
+        "CHANGELOG.md",
+        "LICENSE"
+      ],
+      source_ref: "v#{@version}",
+      groups_for_modules: [
+        "Core Penalties": [
+          NxPenalties,
+          NxPenalties.Penalties,
+          NxPenalties.Divergences
+        ],
+        Pipeline: [
+          NxPenalties.Pipeline
+        ],
+        Constraints: [
+          NxPenalties.Constraints,
+          NxPenalties.GradientTracker
+        ],
+        Integrations: [
+          NxPenalties.Integration.Axon,
+          NxPenalties.Integration.Polaris
+        ],
+        Telemetry: [
+          NxPenalties.Telemetry
+        ]
+      ],
+      groups_for_docs: [
+        "Penalty Functions": &(&1[:section] == :penalties),
+        "Divergence Functions": &(&1[:section] == :divergences),
+        "Pipeline Operations": &(&1[:section] == :pipeline)
+      ]
     ]
   end
 
   defp aliases do
     [
-      quality: ["format", "credo --strict", "dialyzer"]
+      quality: ["format", "credo --strict", "dialyzer"],
+      "test.all": ["test --include integration"],
+      setup: ["deps.get", "deps.compile"]
     ]
   end
 end

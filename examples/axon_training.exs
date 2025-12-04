@@ -60,9 +60,11 @@ case Code.ensure_loaded(Axon) do
     IO.puts("--- Using NxPenalties with Axon ---")
 
     {init_fn, predict_fn} = Axon.build(model)
-    model_state = init_fn.(Nx.template({1, 10}, :f32), %{})
 
-    # Get the parameters from model state
+    # Initialize with Axon.ModelState.empty() to avoid deprecation warning
+    model_state = init_fn.(Nx.template({1, 10}, :f32), Axon.ModelState.empty())
+
+    # Get the parameters from model state for demonstration
     params = Axon.ModelState.trainable_parameters(model_state)
 
     # Get weights for demonstration
@@ -78,9 +80,9 @@ case Code.ensure_loaded(Axon) do
     # Training step function using NxPenalties helper
     IO.puts("--- Training Step with Regularization ---")
 
-    # Helper to extract all kernels from params
-    extract_kernels = fn params ->
-      params
+    # Helper to extract all kernels from params map
+    extract_kernels = fn params_map ->
+      params_map
       |> Map.values()
       |> Enum.flat_map(fn layer ->
         case layer do
@@ -90,11 +92,17 @@ case Code.ensure_loaded(Axon) do
       end)
     end
 
-    step_fn = fn params, x_batch, y_batch ->
-      # Simple MSE + regularization
+    # Training step that works with ModelState
+    step_fn = fn model_state, x_batch, y_batch ->
+      # Extract trainable parameters for gradient computation
+      params = Axon.ModelState.trainable_parameters(model_state)
+
+      # Compute loss and gradients with respect to params
       {loss, grads} =
         Nx.Defn.value_and_grad(params, fn p ->
-          y_pred = predict_fn.(p, x_batch)
+          # Update ModelState with current params for prediction
+          temp_state = Axon.ModelState.update(model_state, p)
+          y_pred = predict_fn.(temp_state, x_batch)
           mse = Nx.mean(Nx.pow(Nx.subtract(y_pred, y_batch), 2))
 
           # Add L2 penalty on all kernels
@@ -107,7 +115,7 @@ case Code.ensure_loaded(Axon) do
           Nx.add(mse, reg)
         end)
 
-      # Simple gradient descent update
+      # Apply gradient descent update to params
       new_params =
         params
         |> Map.keys()
@@ -128,17 +136,18 @@ case Code.ensure_loaded(Axon) do
           Map.put(acc, layer_name, updated_layer)
         end)
 
-      {loss, new_params}
+      # Return loss and updated ModelState
+      {loss, Axon.ModelState.update(model_state, new_params)}
     end
 
     # Run a few training steps
     IO.puts("Running 5 training steps...")
 
-    {final_loss, _final_params} =
-      Enum.reduce(1..5, {nil, params}, fn step, {_prev_loss, p} ->
-        {loss, new_p} = step_fn.(p, x_train, y_train)
+    {final_loss, _final_state} =
+      Enum.reduce(1..5, {nil, model_state}, fn step, {_prev_loss, state} ->
+        {loss, new_state} = step_fn.(state, x_train, y_train)
         IO.puts("  Step #{step}: loss = #{Float.round(Nx.to_number(loss), 6)}")
-        {loss, new_p}
+        {loss, new_state}
       end)
 
     IO.puts("\nFinal loss: #{Nx.to_number(final_loss)}")
@@ -159,18 +168,23 @@ case Code.ensure_loaded(Axon) do
           {:l1, weight: 0.001}
         ])
 
-        # Custom training step
-        defn train_step(model_fn, params, x, y, pipeline) do
-          {loss, grads} = value_and_grad(params, fn p ->
-            pred = model_fn.(p, x)
+        # Custom training step with ModelState
+        def train_step(model_state, predict_fn, x, y) do
+          params = Axon.ModelState.trainable_parameters(model_state)
+
+          {loss, grads} = Nx.Defn.value_and_grad(params, fn p ->
+            temp_state = Axon.ModelState.update(model_state, p)
+            pred = predict_fn.(temp_state, x)
             base_loss = Axon.Losses.mean_squared_error(pred, y)
 
-            # Add regularization
-            reg = compute_weight_penalty(p, pipeline)
-            base_loss + reg
+            # Add regularization on weights
+            reg = NxPenalties.l2(p["dense_0"]["kernel"], lambda: 0.01)
+            Nx.add(base_loss, reg)
           end)
 
-          # Update params...
+          # Update params and return new ModelState
+          new_params = apply_gradients(params, grads, learning_rate: 0.01)
+          Axon.ModelState.update(model_state, new_params)
         end
 
     See the NxPenalties.Integration.Axon module for helper functions.
