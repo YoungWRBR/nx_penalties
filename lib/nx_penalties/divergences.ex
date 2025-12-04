@@ -34,6 +34,11 @@ defmodule NxPenalties.Divergences do
       * `:mean` - Mean over batch dimension
       * `:sum` - Sum over batch dimension
       * `:none` - Return per-sample values
+    * `:direction` - Which KL direction to compute. Default: `:forward`
+      * `:forward` - KL(P || Q) (standard)
+      * `:reverse` - KL(Q || P)
+    * `:symmetric` - Compute symmetric KL: 0.5 * (KL(P||Q) + KL(Q||P)). Default: `false`
+      When `true`, the `:direction` option is ignored.
 
   ## Examples
 
@@ -41,19 +46,49 @@ defmodule NxPenalties.Divergences do
       iex> q_logprobs = Nx.log(Nx.tensor([0.25, 0.25, 0.25, 0.25]))
       iex> NxPenalties.Divergences.kl_divergence(p_logprobs, q_logprobs)
 
+      # Reverse KL
+      iex> NxPenalties.Divergences.kl_divergence(p_logprobs, q_logprobs, direction: :reverse)
+
+      # Symmetric KL
+      iex> NxPenalties.Divergences.kl_divergence(p_logprobs, q_logprobs, symmetric: true)
+
   ## Mathematical Definition
 
       KL(P || Q) = Σ p(x) * log(p(x) / q(x))
                  = Σ p(x) * (log_p(x) - log_q(x))
+
+      Symmetric KL = 0.5 * (KL(P||Q) + KL(Q||P))
   """
   @spec kl_divergence(Nx.Tensor.t(), Nx.Tensor.t(), keyword()) :: Nx.Tensor.t()
   deftransform kl_divergence(p_logprobs, q_logprobs, opts \\ []) do
     reduction = Keyword.get(opts, :reduction, :mean)
+    direction = Keyword.get(opts, :direction, :forward)
+    symmetric = Keyword.get(opts, :symmetric, false)
 
-    case reduction do
-      :mean -> kl_mean_impl(p_logprobs, q_logprobs)
-      :sum -> kl_sum_impl(p_logprobs, q_logprobs)
-      :none -> kl_none_impl(p_logprobs, q_logprobs)
+    cond do
+      symmetric ->
+        # Symmetric KL: 0.5 * (KL(P||Q) + KL(Q||P))
+        case reduction do
+          :mean -> kl_symmetric_mean_impl(p_logprobs, q_logprobs)
+          :sum -> kl_symmetric_sum_impl(p_logprobs, q_logprobs)
+          :none -> kl_symmetric_none_impl(p_logprobs, q_logprobs)
+        end
+
+      direction == :reverse ->
+        # Reverse KL: KL(Q||P) - swap arguments
+        case reduction do
+          :mean -> kl_mean_impl(q_logprobs, p_logprobs)
+          :sum -> kl_sum_impl(q_logprobs, p_logprobs)
+          :none -> kl_none_impl(q_logprobs, p_logprobs)
+        end
+
+      true ->
+        # Forward KL: KL(P||Q) - default
+        case reduction do
+          :mean -> kl_mean_impl(p_logprobs, q_logprobs)
+          :sum -> kl_sum_impl(p_logprobs, q_logprobs)
+          :none -> kl_none_impl(p_logprobs, q_logprobs)
+        end
     end
   end
 
@@ -86,6 +121,23 @@ defmodule NxPenalties.Divergences do
     masked = Nx.select(valid_mask, pointwise, Nx.tensor(0.0))
 
     Nx.sum(masked, axes: [-1])
+  end
+
+  # Symmetric KL implementations: 0.5 * (KL(P||Q) + KL(Q||P))
+  defnp kl_symmetric_mean_impl(p_logprobs, q_logprobs) do
+    kl_per_sample = kl_symmetric_none_impl(p_logprobs, q_logprobs)
+    Nx.mean(kl_per_sample)
+  end
+
+  defnp kl_symmetric_sum_impl(p_logprobs, q_logprobs) do
+    kl_per_sample = kl_symmetric_none_impl(p_logprobs, q_logprobs)
+    Nx.sum(kl_per_sample)
+  end
+
+  defnp kl_symmetric_none_impl(p_logprobs, q_logprobs) do
+    kl_pq = kl_none_impl(p_logprobs, q_logprobs)
+    kl_qp = kl_none_impl(q_logprobs, p_logprobs)
+    Nx.divide(Nx.add(kl_pq, kl_qp), 2.0)
   end
 
   @doc """
@@ -162,6 +214,10 @@ defmodule NxPenalties.Divergences do
     * `:normalize` - Normalize entropy by maximum possible value. Default: `false`
       * `false` - Return raw entropy
       * `true` - Divide by log(vocab_size) to get result in [0, 1]
+    * `:temperature` - Temperature scaling factor. Default: `1.0`
+      * `< 1.0` - Sharper distribution (lower entropy)
+      * `1.0` - No scaling
+      * `> 1.0` - Flatter distribution (higher entropy)
 
   ## Examples
 
@@ -173,6 +229,9 @@ defmodule NxPenalties.Divergences do
       iex> NxPenalties.Divergences.entropy(logprobs, normalize: true)
       # Returns 1.0 (normalized maximum entropy)
 
+      # Temperature scaling (sharper)
+      iex> NxPenalties.Divergences.entropy(logprobs, temperature: 0.5)
+
   ## Mathematical Definition
 
       H(P) = -Σ p(x) * log(p(x))
@@ -182,27 +241,49 @@ defmodule NxPenalties.Divergences do
 
   When normalized:
       H_norm(P) = H(P) / log(vocab_size)
+
+  With temperature T:
+      p_scaled(x) = softmax(log_p(x) / T)
+      H_T(P) = H(p_scaled)
   """
   @spec entropy(Nx.Tensor.t(), keyword()) :: Nx.Tensor.t()
   deftransform entropy(logprobs, opts \\ []) do
     mode = Keyword.get(opts, :mode, :bonus)
     reduction = Keyword.get(opts, :reduction, :mean)
     normalize = Keyword.get(opts, :normalize, false)
+    temperature = Keyword.get(opts, :temperature, 1.0)
+
+    # Apply temperature scaling if not 1.0
+    scaled_logprobs =
+      if temperature == 1.0 do
+        logprobs
+      else
+        apply_temperature(logprobs, temperature)
+      end
 
     case {mode, reduction, normalize} do
-      {:bonus, :mean, false} -> entropy_bonus_mean_impl(logprobs)
-      {:bonus, :sum, false} -> entropy_bonus_sum_impl(logprobs)
-      {:bonus, :none, false} -> entropy_bonus_none_impl(logprobs)
-      {:penalty, :mean, false} -> entropy_penalty_mean_impl(logprobs)
-      {:penalty, :sum, false} -> entropy_penalty_sum_impl(logprobs)
-      {:penalty, :none, false} -> entropy_penalty_none_impl(logprobs)
-      {:bonus, :mean, true} -> entropy_bonus_mean_normalized_impl(logprobs)
-      {:bonus, :sum, true} -> entropy_bonus_sum_normalized_impl(logprobs)
-      {:bonus, :none, true} -> entropy_bonus_none_normalized_impl(logprobs)
-      {:penalty, :mean, true} -> entropy_penalty_mean_normalized_impl(logprobs)
-      {:penalty, :sum, true} -> entropy_penalty_sum_normalized_impl(logprobs)
-      {:penalty, :none, true} -> entropy_penalty_none_normalized_impl(logprobs)
+      {:bonus, :mean, false} -> entropy_bonus_mean_impl(scaled_logprobs)
+      {:bonus, :sum, false} -> entropy_bonus_sum_impl(scaled_logprobs)
+      {:bonus, :none, false} -> entropy_bonus_none_impl(scaled_logprobs)
+      {:penalty, :mean, false} -> entropy_penalty_mean_impl(scaled_logprobs)
+      {:penalty, :sum, false} -> entropy_penalty_sum_impl(scaled_logprobs)
+      {:penalty, :none, false} -> entropy_penalty_none_impl(scaled_logprobs)
+      {:bonus, :mean, true} -> entropy_bonus_mean_normalized_impl(scaled_logprobs)
+      {:bonus, :sum, true} -> entropy_bonus_sum_normalized_impl(scaled_logprobs)
+      {:bonus, :none, true} -> entropy_bonus_none_normalized_impl(scaled_logprobs)
+      {:penalty, :mean, true} -> entropy_penalty_mean_normalized_impl(scaled_logprobs)
+      {:penalty, :sum, true} -> entropy_penalty_sum_normalized_impl(scaled_logprobs)
+      {:penalty, :none, true} -> entropy_penalty_none_normalized_impl(scaled_logprobs)
     end
+  end
+
+  # Apply temperature scaling to log-probabilities
+  # Divides logprobs by temperature, then re-normalizes
+  defnp apply_temperature(logprobs, temperature) do
+    # Scale by temperature (logits / T)
+    scaled = Nx.divide(logprobs, temperature)
+    # Re-normalize: subtract logsumexp to get valid log-probabilities
+    Nx.subtract(scaled, Nx.logsumexp(scaled, axes: [-1], keep_axes: true))
   end
 
   defnp entropy_bonus_mean_impl(logprobs) do

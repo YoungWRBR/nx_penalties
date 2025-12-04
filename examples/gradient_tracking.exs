@@ -42,6 +42,29 @@ IO.puts("Note: L1/L2 norms are unweighted. Total norm includes weights.")
 IO.puts("L2 has higher gradient norm but lower weight (0.01 vs 0.001)")
 IO.puts("")
 
+# Non-differentiable penalties
+# Some penalties contain operations like argmax that have no gradient.
+# Mark them with `differentiable: false` to skip gradient tracking.
+IO.puts("--- Non-Differentiable Penalties ---")
+
+# This penalty uses argmax which is not differentiable
+argmax_penalty = fn x, _opts -> Nx.argmax(x) |> Nx.as_type(:f32) end
+
+pipeline_with_nondiff =
+  NxPenalties.Pipeline.new()
+  |> NxPenalties.Pipeline.add(:l1, &NxPenalties.Penalties.l1/2, weight: 0.001)
+  |> NxPenalties.Pipeline.add(:argmax_based, argmax_penalty,
+    weight: 0.01,
+    # Skip gradient tracking for this penalty
+    differentiable: false
+  )
+
+{_total, metrics} = NxPenalties.compute(pipeline_with_nondiff, tensor, track_grad_norms: true)
+IO.puts("L1 grad norm: #{metrics["l1_grad_norm"]}")
+IO.puts("Argmax grad norm: #{inspect(metrics["argmax_based_grad_norm"])}")
+IO.puts("(argmax_based is skipped - no error, no warning)")
+IO.puts("")
+
 # Using GradientTracker directly for custom loss functions
 IO.puts("--- Direct GradientTracker Usage ---")
 alias NxPenalties.GradientTracker

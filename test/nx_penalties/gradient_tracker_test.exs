@@ -27,13 +27,21 @@ defmodule NxPenalties.GradientTrackerTest do
     end
 
     test "handles non-differentiable operations gracefully" do
-      # Nx.argmax is not differentiable
+      import ExUnit.CaptureLog
+
+      # Nx.argmax is not differentiable (returns discrete index, no gradient possible)
       loss_fn = fn x -> Nx.argmax(x) end
       tensor = Nx.tensor([1.0, 2.0, 3.0])
 
-      # Should return nil instead of crashing
-      norm = GradientTracker.compute_grad_norm(loss_fn, tensor)
+      # Should return nil instead of crashing, and log a warning
+      {norm, log} =
+        with_log(fn ->
+          GradientTracker.compute_grad_norm(loss_fn, tensor)
+        end)
+
       assert norm == nil
+      assert log =~ "Gradient computation failed"
+      assert log =~ "non-differentiable"
     end
 
     test "handles multidimensional tensors" do
@@ -172,6 +180,76 @@ defmodule NxPenalties.GradientTrackerTest do
 
       # Only L1: norm = sqrt(3)
       assert_in_delta norm, :math.sqrt(3), 1.0e-5
+    end
+
+    test "skips non-differentiable entries" do
+      pipeline =
+        NxPenalties.Pipeline.new()
+        |> NxPenalties.Pipeline.add(:l1, &NxPenalties.Penalties.l1/2, weight: 1.0)
+        |> NxPenalties.Pipeline.add(:nondiff, fn x, _ -> Nx.argmax(x) end,
+          weight: 1.0,
+          differentiable: false
+        )
+
+      tensor = Nx.tensor([1.0, 1.0, 1.0])
+
+      # Should only compute gradient for l1, skipping nondiff entirely (no warning)
+      norm = GradientTracker.total_grad_norm(pipeline, tensor)
+
+      # Only L1: norm = sqrt(3)
+      assert_in_delta norm, :math.sqrt(3), 1.0e-5
+    end
+  end
+
+  describe "differentiable option" do
+    test "pipeline_grad_norms skips non-differentiable penalties" do
+      pipeline =
+        NxPenalties.Pipeline.new()
+        |> NxPenalties.Pipeline.add(:l1, &NxPenalties.Penalties.l1/2, weight: 1.0)
+        |> NxPenalties.Pipeline.add(:nondiff, fn x, _ -> Nx.argmax(x) end,
+          weight: 1.0,
+          differentiable: false
+        )
+
+      tensor = Nx.tensor([1.0, 2.0, 3.0])
+
+      norms = GradientTracker.pipeline_grad_norms(pipeline, tensor)
+
+      # Should have l1_grad_norm but NOT nondiff_grad_norm
+      assert Map.has_key?(norms, "l1_grad_norm")
+      refute Map.has_key?(norms, "nondiff_grad_norm")
+    end
+
+    test "differentiable defaults to true" do
+      pipeline =
+        NxPenalties.Pipeline.new()
+        |> NxPenalties.Pipeline.add(:l1, &NxPenalties.Penalties.l1/2, weight: 1.0)
+
+      # Should be differentiable by default
+      assert get_in(pipeline.meta, [:l1, :differentiable]) == true
+    end
+
+    test "differentiable: false is stored in meta" do
+      pipeline =
+        NxPenalties.Pipeline.new()
+        |> NxPenalties.Pipeline.add(:nondiff, fn x, _ -> x end,
+          weight: 1.0,
+          differentiable: false
+        )
+
+      assert get_in(pipeline.meta, [:nondiff, :differentiable]) == false
+    end
+
+    test "remove cleans up meta" do
+      pipeline =
+        NxPenalties.Pipeline.new()
+        |> NxPenalties.Pipeline.add(:l1, &NxPenalties.Penalties.l1/2,
+          weight: 1.0,
+          differentiable: false
+        )
+        |> NxPenalties.Pipeline.remove(:l1)
+
+      refute Map.has_key?(pipeline.meta, :l1)
     end
   end
 end

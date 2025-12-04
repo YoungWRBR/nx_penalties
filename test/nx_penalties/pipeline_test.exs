@@ -343,4 +343,60 @@ defmodule NxPenalties.PipelineTest do
       refute Map.has_key?(metrics, "l2_grad_norm")
     end
   end
+
+  # Tests for extended penalty_fn_for mappings (constraints and gradient penalties)
+  describe "NxPenalties.pipeline/1 extended mappings" do
+    test "supports :orthogonality penalty" do
+      pipeline = NxPenalties.pipeline([{:orthogonality, weight: 0.01}])
+      tensor = Nx.tensor([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
+      {total, metrics} = Pipeline.compute(pipeline, tensor)
+
+      assert_scalar(total)
+      assert Map.has_key?(metrics, "orthogonality")
+    end
+
+    test "supports :output_magnitude penalty" do
+      pipeline = NxPenalties.pipeline([{:output_magnitude, weight: 0.01}])
+      tensor = Nx.tensor([1.0, 2.0, 3.0])
+      {total, metrics} = Pipeline.compute(pipeline, tensor)
+
+      assert_scalar(total)
+      assert Map.has_key?(metrics, "output_magnitude")
+    end
+
+    test "raises on unknown penalty type" do
+      assert_raise ArgumentError, ~r/Unknown penalty/, fn ->
+        NxPenalties.pipeline([{:unknown_penalty, weight: 0.01}])
+      end
+    end
+  end
+
+  # Tests for top-level delegates
+  describe "NxPenalties top-level delegates" do
+    test "orthogonality/2 delegates to Constraints" do
+      tensor = Nx.tensor([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
+      result = NxPenalties.orthogonality(tensor)
+      assert_scalar(result)
+    end
+
+    test "consistency/3 delegates to Constraints" do
+      output1 = Nx.tensor([1.0, 2.0, 3.0])
+      output2 = Nx.tensor([1.1, 2.1, 3.1])
+      result = NxPenalties.consistency(output1, output2)
+      assert_scalar(result)
+    end
+
+    test "orthogonality/2 with options" do
+      tensor = Nx.tensor([[1.0, 0.0], [0.0, 1.0], [0.5, 0.5]])
+      result = NxPenalties.orthogonality(tensor, mode: :hard, normalize: false)
+      assert_scalar(result)
+    end
+
+    test "consistency/3 with options" do
+      output1 = Nx.tensor([1.0, 2.0, 3.0])
+      output2 = Nx.tensor([1.1, 2.1, 3.1])
+      result = NxPenalties.consistency(output1, output2, metric: :l1)
+      assert_scalar(result)
+    end
+  end
 end

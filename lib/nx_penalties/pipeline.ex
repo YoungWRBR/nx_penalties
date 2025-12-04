@@ -30,12 +30,13 @@ defmodule NxPenalties.Pipeline do
     * `enabled` - Boolean to include/exclude from computation
   """
 
-  defstruct entries: [], name: nil
+  defstruct entries: [], name: nil, meta: %{}
 
   @type entry :: {atom(), function(), number() | Nx.Tensor.t(), keyword(), boolean()}
   @type t :: %__MODULE__{
           entries: [entry()],
-          name: String.t() | nil
+          name: String.t() | nil,
+          meta: %{atom() => map()}
         }
 
   @doc """
@@ -68,21 +69,28 @@ defmodule NxPenalties.Pipeline do
       * `:weight` - Scaling factor. Default: `1.0`
       * `:opts` - Options passed to the penalty function. Default: `[]`
       * `:enabled` - Whether to include in computation. Default: `true`
+      * `:differentiable` - Whether gradient tracking should be attempted for this
+        penalty. Set to `false` for penalties containing non-differentiable operations
+        like `Nx.argmax/2`. Default: `true`
 
   ## Examples
 
       pipeline
       |> Pipeline.add(:l1, &Penalties.l1/2, weight: 0.01)
       |> Pipeline.add(:l2, &Penalties.l2/2, weight: 0.001, opts: [clip: 1000.0])
+      |> Pipeline.add(:custom, &my_argmax_penalty/2, weight: 0.1, differentiable: false)
   """
   @spec add(t(), atom(), function(), keyword()) :: t()
-  def add(%__MODULE__{entries: entries} = pipeline, name, penalty_fn, opts \\ []) do
+  def add(%__MODULE__{entries: entries, meta: meta} = pipeline, name, penalty_fn, opts \\ []) do
     weight = Keyword.get(opts, :weight, 1.0)
     penalty_opts = Keyword.get(opts, :opts, [])
     enabled = Keyword.get(opts, :enabled, true)
+    differentiable = Keyword.get(opts, :differentiable, true)
 
     entry = {name, penalty_fn, weight, penalty_opts, enabled}
-    %{pipeline | entries: entries ++ [entry]}
+    new_meta = Map.put(meta, name, %{differentiable: differentiable})
+
+    %{pipeline | entries: entries ++ [entry], meta: new_meta}
   end
 
   @doc """
@@ -93,9 +101,10 @@ defmodule NxPenalties.Pipeline do
       pipeline = Pipeline.remove(pipeline, :l1)
   """
   @spec remove(t(), atom()) :: t()
-  def remove(%__MODULE__{entries: entries} = pipeline, name) do
+  def remove(%__MODULE__{entries: entries, meta: meta} = pipeline, name) do
     new_entries = Enum.reject(entries, fn {n, _, _, _, _} -> n == name end)
-    %{pipeline | entries: new_entries}
+    new_meta = Map.delete(meta, name)
+    %{pipeline | entries: new_entries, meta: new_meta}
   end
 
   @doc """

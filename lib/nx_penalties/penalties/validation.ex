@@ -9,7 +9,8 @@ defmodule NxPenalties.Penalties.Validation do
   @l2_schema [
     lambda: [type: {:or, [:float, :integer]}, default: 1.0],
     reduction: [type: {:in, [:sum, :mean]}, default: :sum],
-    clip: [type: {:or, [:float, :integer, nil]}, default: nil]
+    clip: [type: {:or, [:float, :integer, nil]}, default: nil],
+    center: [type: {:or, [:atom, :float, :integer, nil]}, default: nil]
   ]
 
   @elastic_net_schema [

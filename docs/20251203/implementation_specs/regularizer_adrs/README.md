@@ -23,6 +23,9 @@ These ADRs document the design decisions for regularization penalties. The math 
 | [ADR-007](adrs/ADR-007_gradient_penalty.md) | Gradient Penalty Regularizer | **Advanced** | Low (v0.2) |
 | [ADR-008](adrs/ADR-008_orthogonality.md) | Orthogonality Regularizer | Proposed | Medium (v0.1) |
 | [ADR-009](adrs/ADR-009_gradient_tracking.md) | Gradient Tracking | Proposed | Medium (v0.1) |
+| [ADR-010](adrs/ADR-010_kl_direction_symmetric.md) | KL Direction & Symmetric Options | Proposed | Medium (v0.2) |
+| [ADR-011](adrs/ADR-011_entropy_temperature.md) | Entropy Temperature Option | Proposed | Medium (v0.2) |
+| [ADR-012](adrs/ADR-012_pipeline_multi.md) | Pipeline.Multi (Data-Aware Pipelines) | Proposed | Low (v0.3) |
 
 ## Regularizer Categories
 
@@ -40,6 +43,12 @@ Regularizers that enforce structural properties on learned representations. Part
 
 ### Infrastructure (ADR-009)
 Supporting functionality for monitoring and debugging regularizer behavior during training.
+
+### Distribution Extensions (ADR-010, ADR-011)
+Option extensions for KL and entropy to cover forward/reverse/symmetric KL and temperature-scaled entropy.
+
+### Pipeline Infrastructure (ADR-012)
+Multi-input pipeline composition for data-aware regularization without custom glue code.
 
 ## Implementation Priority
 

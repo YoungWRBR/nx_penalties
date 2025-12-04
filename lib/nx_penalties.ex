@@ -50,7 +50,7 @@ defmodule NxPenalties do
   - Gradient norm tracking in pipelines (`track_grad_norms: true`)
   """
 
-  alias NxPenalties.{Divergences, GradientPenalty, Penalties, Pipeline}
+  alias NxPenalties.{Constraints, Divergences, GradientPenalty, Penalties, Pipeline}
 
   # ============================================================================
   # Penalty Functions (Validated Wrappers)
@@ -136,6 +136,26 @@ defmodule NxPenalties do
     to: GradientPenalty
 
   # ============================================================================
+  # Constraints
+  # ============================================================================
+
+  @doc """
+  Orthogonality penalty for encouraging uncorrelated representations.
+
+  See `NxPenalties.Constraints.orthogonality/2` for full documentation.
+  """
+  @spec orthogonality(Nx.Tensor.t(), keyword()) :: Nx.Tensor.t()
+  defdelegate orthogonality(tensor, opts \\ []), to: Constraints
+
+  @doc """
+  Consistency penalty for paired inputs.
+
+  See `NxPenalties.Constraints.consistency/3` for full documentation.
+  """
+  @spec consistency(Nx.Tensor.t(), Nx.Tensor.t(), keyword()) :: Nx.Tensor.t()
+  defdelegate consistency(output1, output2, opts \\ []), to: Constraints
+
+  # ============================================================================
   # Pipeline API
   # ============================================================================
 
@@ -185,11 +205,13 @@ defmodule NxPenalties do
   defp penalty_fn_for(:kl), do: &Divergences.kl_divergence/3
   defp penalty_fn_for(:js), do: &Divergences.js_divergence/3
   defp penalty_fn_for(:entropy), do: &Divergences.entropy/2
+  defp penalty_fn_for(:orthogonality), do: &Constraints.orthogonality/2
+  defp penalty_fn_for(:output_magnitude), do: &GradientPenalty.output_magnitude_penalty/2
 
   defp penalty_fn_for(name) do
     raise ArgumentError,
           "Unknown penalty: #{inspect(name)}. " <>
-            "Available: :l1, :l2, :elastic_net, :kl, :js, :entropy"
+            "Available: :l1, :l2, :elastic_net, :kl, :js, :entropy, :orthogonality, :output_magnitude"
   end
 
   @doc """

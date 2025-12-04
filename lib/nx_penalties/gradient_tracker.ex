@@ -107,7 +107,11 @@ defmodule NxPenalties.GradientTracker do
   @spec pipeline_grad_norms(NxPenalties.Pipeline.t(), Nx.Tensor.t()) :: map()
   def pipeline_grad_norms(pipeline, tensor) do
     pipeline.entries
-    |> Enum.filter(fn {_, _, _, _, enabled} -> enabled end)
+    |> Enum.filter(fn {name, _, _, _, enabled} ->
+      # Check if enabled AND marked as differentiable (default true)
+      differentiable = get_in(pipeline.meta, [name, :differentiable]) != false
+      enabled and differentiable
+    end)
     |> Enum.flat_map(fn {name, penalty_fn, _weight, opts, _enabled} ->
       loss_fn = fn t -> penalty_fn.(t, opts) end
 
@@ -147,7 +151,10 @@ defmodule NxPenalties.GradientTracker do
   def total_grad_norm(pipeline, tensor) do
     total_loss_fn = fn t ->
       pipeline.entries
-      |> Enum.filter(fn {_, _, _, _, enabled} -> enabled end)
+      |> Enum.filter(fn {name, _, _, _, enabled} ->
+        differentiable = get_in(pipeline.meta, [name, :differentiable]) != false
+        enabled and differentiable
+      end)
       |> Enum.map(fn {_name, penalty_fn, weight, opts, _enabled} ->
         Nx.multiply(penalty_fn.(t, opts), weight)
       end)

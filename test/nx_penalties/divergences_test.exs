@@ -267,6 +267,213 @@ defmodule NxPenalties.DivergencesTest do
     end
   end
 
+  # ADR-010: KL direction and symmetric options
+  describe "kl_divergence/3 with direction option" do
+    test "direction: :forward is default behavior (KL(P||Q))" do
+      p_logprobs = Nx.tensor([-0.1, -1.5, -3.0, -4.0]) |> normalize_logprobs()
+      q_logprobs = Nx.tensor([-2.0, -0.5, -2.0, -3.0]) |> normalize_logprobs()
+
+      default_kl = Divergences.kl_divergence(p_logprobs, q_logprobs)
+      forward_kl = Divergences.kl_divergence(p_logprobs, q_logprobs, direction: :forward)
+
+      assert_close(default_kl, forward_kl)
+    end
+
+    test "direction: :reverse computes KL(Q||P)" do
+      p_logprobs = Nx.tensor([-0.1, -1.5, -3.0, -4.0]) |> normalize_logprobs()
+      q_logprobs = Nx.tensor([-2.0, -0.5, -2.0, -3.0]) |> normalize_logprobs()
+
+      # Reverse KL should equal swapping arguments
+      reverse_kl = Divergences.kl_divergence(p_logprobs, q_logprobs, direction: :reverse)
+      swapped_kl = Divergences.kl_divergence(q_logprobs, p_logprobs, direction: :forward)
+
+      assert_close(reverse_kl, swapped_kl)
+    end
+
+    test "symmetric: true computes 0.5 * (KL(P||Q) + KL(Q||P))" do
+      p_logprobs = Nx.tensor([-0.1, -1.5, -3.0, -4.0]) |> normalize_logprobs()
+      q_logprobs = Nx.tensor([-2.0, -0.5, -2.0, -3.0]) |> normalize_logprobs()
+
+      symmetric_kl = Divergences.kl_divergence(p_logprobs, q_logprobs, symmetric: true)
+
+      kl_pq = Divergences.kl_divergence(p_logprobs, q_logprobs, direction: :forward)
+      kl_qp = Divergences.kl_divergence(q_logprobs, p_logprobs, direction: :forward)
+      expected = Nx.divide(Nx.add(kl_pq, kl_qp), 2.0)
+
+      assert_close(symmetric_kl, expected, atol: 1.0e-5)
+    end
+
+    test "symmetric KL is symmetric" do
+      p_logprobs = random_logprobs({8})
+      q_logprobs = random_logprobs({8})
+
+      sym_pq =
+        Divergences.kl_divergence(p_logprobs, q_logprobs, symmetric: true) |> Nx.to_number()
+
+      sym_qp =
+        Divergences.kl_divergence(q_logprobs, p_logprobs, symmetric: true) |> Nx.to_number()
+
+      assert_in_delta sym_pq, sym_qp, 1.0e-5
+    end
+
+    test "symmetric: true ignores direction option" do
+      p_logprobs = random_logprobs({4})
+      q_logprobs = random_logprobs({4})
+
+      sym_default = Divergences.kl_divergence(p_logprobs, q_logprobs, symmetric: true)
+
+      sym_forward =
+        Divergences.kl_divergence(p_logprobs, q_logprobs, symmetric: true, direction: :forward)
+
+      sym_reverse =
+        Divergences.kl_divergence(p_logprobs, q_logprobs, symmetric: true, direction: :reverse)
+
+      assert_close(sym_default, sym_forward)
+      assert_close(sym_default, sym_reverse)
+    end
+
+    test "direction: :reverse with reduction: :none preserves shape" do
+      p_logprobs = random_logprobs({2, 4})
+      q_logprobs = random_logprobs({2, 4})
+
+      result =
+        Divergences.kl_divergence(p_logprobs, q_logprobs, direction: :reverse, reduction: :none)
+
+      assert Nx.shape(result) == {2}
+    end
+
+    test "symmetric: true with reduction: :none preserves shape" do
+      p_logprobs = random_logprobs({2, 4})
+      q_logprobs = random_logprobs({2, 4})
+
+      result =
+        Divergences.kl_divergence(p_logprobs, q_logprobs, symmetric: true, reduction: :none)
+
+      assert Nx.shape(result) == {2}
+    end
+
+    test "gradient flows with direction: :reverse" do
+      grad_fn =
+        Nx.Defn.grad(fn {p, q} ->
+          Divergences.kl_divergence(p, q, direction: :reverse)
+        end)
+
+      p = random_logprobs({4})
+      q = random_logprobs({4})
+      {grad_p, grad_q} = grad_fn.({p, q})
+      assert_finite(grad_p)
+      assert_finite(grad_q)
+    end
+
+    test "gradient flows with symmetric: true" do
+      grad_fn =
+        Nx.Defn.grad(fn {p, q} ->
+          Divergences.kl_divergence(p, q, symmetric: true)
+        end)
+
+      p = random_logprobs({4})
+      q = random_logprobs({4})
+      {grad_p, grad_q} = grad_fn.({p, q})
+      assert_finite(grad_p)
+      assert_finite(grad_q)
+    end
+  end
+
+  # ADR-011: Entropy temperature option
+  describe "entropy/2 with temperature option" do
+    test "temperature: 1.0 is default behavior" do
+      logprobs = random_logprobs({4})
+
+      default = Divergences.entropy(logprobs)
+      with_temp = Divergences.entropy(logprobs, temperature: 1.0)
+
+      assert_close(default, with_temp)
+    end
+
+    test "temperature < 1.0 decreases entropy (sharpens distribution)" do
+      # Use a non-uniform distribution
+      logprobs = Nx.tensor([-0.5, -1.0, -2.0, -3.0]) |> normalize_logprobs()
+
+      entropy_normal = Divergences.entropy(logprobs, mode: :bonus) |> Nx.to_number()
+
+      entropy_sharp =
+        Divergences.entropy(logprobs, temperature: 0.5, mode: :bonus) |> Nx.to_number()
+
+      # Lower temperature should give lower entropy (more peaked)
+      assert entropy_sharp < entropy_normal
+    end
+
+    test "temperature > 1.0 increases entropy (flattens distribution)" do
+      # Use a peaked distribution
+      logprobs = Nx.tensor([0.0, -3.0, -5.0, -8.0]) |> normalize_logprobs()
+
+      entropy_normal = Divergences.entropy(logprobs, mode: :bonus) |> Nx.to_number()
+
+      entropy_flat =
+        Divergences.entropy(logprobs, temperature: 2.0, mode: :bonus) |> Nx.to_number()
+
+      # Higher temperature should give higher entropy (more uniform)
+      assert entropy_flat > entropy_normal
+    end
+
+    test "temperature works with mode: :penalty" do
+      logprobs = random_logprobs({4})
+
+      bonus = Divergences.entropy(logprobs, temperature: 0.5, mode: :bonus) |> Nx.to_number()
+      penalty = Divergences.entropy(logprobs, temperature: 0.5, mode: :penalty) |> Nx.to_number()
+
+      assert_in_delta penalty, -bonus, 1.0e-5
+    end
+
+    test "temperature works with normalize: true" do
+      logprobs = random_logprobs({4})
+
+      result = Divergences.entropy(logprobs, temperature: 0.7, normalize: true)
+      value = Nx.to_number(result)
+
+      # Normalized entropy should still be in [0, 1]
+      assert value >= 0.0
+      assert value <= 1.0 + 1.0e-5
+    end
+
+    test "temperature works with all reduction modes" do
+      logprobs = random_logprobs({2, 8})
+
+      mean_result = Divergences.entropy(logprobs, temperature: 0.8, reduction: :mean)
+      assert Nx.shape(mean_result) == {}
+
+      sum_result = Divergences.entropy(logprobs, temperature: 0.8, reduction: :sum)
+      assert Nx.shape(sum_result) == {}
+
+      none_result = Divergences.entropy(logprobs, temperature: 0.8, reduction: :none)
+      assert Nx.shape(none_result) == {2}
+    end
+
+    test "gradient flows with temperature option" do
+      grad_fn = Nx.Defn.grad(fn x -> Divergences.entropy(x, temperature: 0.5) end)
+      logprobs = random_logprobs({4})
+      grads = grad_fn.(logprobs)
+      assert_finite(grads)
+    end
+
+    test "temperature combined with normalize and penalty mode" do
+      logprobs = random_logprobs({2, 8})
+
+      result =
+        Divergences.entropy(logprobs,
+          temperature: 0.7,
+          normalize: true,
+          mode: :penalty,
+          reduction: :mean
+        )
+
+      value = Nx.to_number(result)
+      # Penalty mode + normalized => should be in [-1, 0]
+      assert value >= -1.0 - 1.0e-5
+      assert value <= 0.0 + 1.0e-5
+    end
+  end
+
   # Helper to normalize log probabilities
   defp normalize_logprobs(logprobs) do
     Nx.subtract(logprobs, Nx.logsumexp(logprobs, axes: [-1], keep_axes: true))
